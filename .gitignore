@@ -1,0 +1,18 @@
+.idea
+**__pycache__**
+**.DS_Store**
+data/*/*.txt
+cfgs/*/*stereocarla.yaml
+
+cfgs/foundationstereo/fstereo_*.yaml
+cfgs/foundationstereo/fstereo_combine.yaml
+
+# 训练产物（ckpt、日志、代码快照、训练/测试可视化）
+output/
+
+# 预训练模型权重
+pretrained/
+
+# Python 缓存
+*.pyc
+*.pyo

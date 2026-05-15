@@ -1,0 +1,75 @@
+# BANet2D aligned：合并数据集 orbbec_merged_real_640x480（共 4187 训练样本）
+# 完全对齐官方 BANet/banet-2d 训练 pipeline
+# 生成时间: 2026-05-14 10:35:48
+
+DATA_CONFIG:
+    DATA_INFOS:
+        -   DATASET: OrbbecDataset
+            DATA_PATH: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/foundation_out
+            DATA_SPLIT: {
+                TRAINING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_train.txt,
+                EVALUATING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_val.txt,
+                TESTING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_test.txt
+            }
+            RETURN_RIGHT_DISP: false
+
+    DATA_TRANSFORM:
+        TRAINING:
+            - { NAME: BANetFlowAugmentor }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+        EVALUATING:
+            - { NAME: RightTopPad, SIZE: [ 480, 640 ] }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+
+MODEL:
+    NAME: BANet2D
+    MAX_DISP: 192
+    FIND_UNUSED_PARAMETERS: false
+    CKPT: -1
+    PRETRAINED_MODEL: pretrained/banet2d/sceneflow.pth
+
+OPTIMIZATION:
+    FREEZE_BN: false
+    SYNC_BN: true
+    AMP: false
+    BATCH_SIZE_PER_GPU: 4
+    NUM_EPOCHS: 200
+
+    OPTIMIZER:
+        NAME: AdamW
+        LR: &lr 0.0008
+        WEIGHT_DECAY: 1.0e-05
+        EPS: 1.0e-08
+
+    SCHEDULER:
+        NAME: OneCycleLR
+        MAX_LR: *lr
+        PCT_START: 0.01
+        CYCLE_MOMENTUM: False
+        ANNEAL_STRATEGY: linear
+        ON_EPOCH: False
+
+    CLIP_GRAD:
+        TYPE: norm
+        MAX_NORM: 1.0
+        NORM_TYPE: 2
+
+EVALUATOR:
+    BATCH_SIZE_PER_GPU: 1
+    MAX_DISP: 192
+    METRIC:
+        - d1_all
+        - epe
+        - thres_1
+        - thres_2
+        - thres_3
+
+TRAINER:
+    EVAL_INTERVAL: 5
+    CKPT_SAVE_INTERVAL: 5
+    MAX_CKPT_SAVE_NUM: 15
+    LOGGER_ITER_INTERVAL: 10
+    TRAIN_VISUALIZATION: True
+    EVAL_VISUALIZATION: True

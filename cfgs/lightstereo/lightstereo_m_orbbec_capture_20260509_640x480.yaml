@@ -1,0 +1,80 @@
+# LightStereo-M：本会话 Orbbec IR + FoundationStereo 伪视差（640×480）
+# 数据：/data2/shendu/code/ruoyu/dataset/orbbec_capture_20260509_140955
+
+DATA_CONFIG:
+    DATA_INFOS:
+        -   DATASET: OrbbecDataset
+            DATA_PATH: /data2/shendu/code/ruoyu/dataset/orbbec_capture_20260509_140955/foundation_out
+            DATA_SPLIT: {
+                TRAINING: /data2/shendu/code/ruoyu/dataset/orbbec_capture_20260509_140955/splits/openstereo/manifest_train.txt,
+                EVALUATING: /data2/shendu/code/ruoyu/dataset/orbbec_capture_20260509_140955/splits/openstereo/manifest_val.txt,
+                TESTING: /data2/shendu/code/ruoyu/dataset/orbbec_capture_20260509_140955/splits/openstereo/manifest_test.txt
+            }
+            RETURN_RIGHT_DISP: false
+
+    DATA_TRANSFORM:
+        TRAINING:
+            - { NAME: StereoColorJitter, BRIGHTNESS: [ 0.7, 1.3 ], CONTRAST: [ 0.7, 1.3 ], SATURATION: [ 0.7, 1.3 ], HUE: 0.3, ASYMMETRIC_PROB: 0 }
+            - { NAME: RandomErase, PROB: 0.5, MAX_TIME: 2, BOUNDS: [ 40, 80 ] }
+            - { NAME: RandomSparseScale, SIZE: [ 320, 608 ], MIN_SCALE: 0.2, MAX_SCALE: 0.5, SCALE_PROB: 1.0 }
+            - { NAME: RandomCrop, SIZE: [ 320, 608 ] }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+            - { NAME: NormalizeImage, MEAN: [ 0.485, 0.456, 0.406 ], STD: [ 0.229, 0.224, 0.225 ] }
+        EVALUATING:
+            - { NAME: RightTopPad, SIZE: [ 480, 640 ] }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+            - { NAME: NormalizeImage, MEAN: [ 0.485, 0.456, 0.406 ], STD: [ 0.229, 0.224, 0.225 ] }
+
+MODEL:
+    NAME: LightStereo
+    # 须与 SceneFlow 预训练一致：MAX_DISP//4=48 对应 Aggregation 输入通道；改为 256 会变为 64 通道导致报错
+    MAX_DISP: 192
+    EXPANSE_RATIO: 4
+    AGGREGATION_BLOCKS: [ 4, 8, 16 ]
+    LEFT_ATT: true
+    FIND_UNUSED_PARAMETERS: false
+    CKPT: -1
+    PRETRAINED_MODEL: pretrained/lightstereo/LightStereo-M-SceneFlow-General.pth
+
+OPTIMIZATION:
+    FREEZE_BN: false
+    SYNC_BN: true
+    AMP: false
+    BATCH_SIZE_PER_GPU: 4
+    NUM_EPOCHS: 200
+
+    OPTIMIZER:
+        NAME: AdamW
+        LR: &lr 0.0001
+        WEIGHT_DECAY: 1.0e-05
+        EPS: 1.0e-08
+
+    SCHEDULER:
+        NAME: OneCycleLR
+        MAX_LR: *lr
+        PCT_START: 0.05
+        ON_EPOCH: False
+
+    CLIP_GRAD:
+        TYPE: value
+        CLIP_VALUE: 0.1
+
+EVALUATOR:
+    BATCH_SIZE_PER_GPU: 1
+    MAX_DISP: 192
+    METRIC:
+        - d1_all
+        - epe
+        - thres_1
+        - thres_2
+        - thres_3
+
+TRAINER:
+    EVAL_INTERVAL: 5
+    CKPT_SAVE_INTERVAL: 5
+    MAX_CKPT_SAVE_NUM: 15
+    LOGGER_ITER_INTERVAL: 10
+    TRAIN_VISUALIZATION: True
+    EVAL_VISUALIZATION: True
