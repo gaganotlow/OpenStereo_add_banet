@@ -1,14 +1,14 @@
-# LightStereo-M：合并数据集 orbbec_merged_real_640x480（共 4187 训练样本）
-# 生成时间: 2026-05-14 10:35:48
+# LightStereo-M：合并数据集 orbbec_merged_real_5ds_640x480（共 8309 训练样本）
+# 生成时间: 2026-05-19 15:25:51
 
 DATA_CONFIG:
     DATA_INFOS:
         -   DATASET: OrbbecDataset
-            DATA_PATH: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/foundation_out
+            DATA_PATH: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/foundation_out
             DATA_SPLIT: {
-                TRAINING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_train.txt,
-                EVALUATING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_val.txt,
-                TESTING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_test.txt
+                TRAINING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_train.txt,
+                EVALUATING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_val.txt,
+                TESTING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_test.txt
             }
             RETURN_RIGHT_DISP: false
 

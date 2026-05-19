@@ -1,21 +1,20 @@
-# BANet2D aligned：合并数据集 orbbec_merged_real_640x480（共 4187 训练样本）
+# BANet2D aligned：合并数据集 orbbec_merged_real_5ds_640x480（共 8309 训练样本，5 个数据集）
 # 完全对齐官方 BANet/banet-2d 训练 pipeline
-# 生成时间: 2026-05-14 10:35:48
 
 DATA_CONFIG:
     DATA_INFOS:
         -   DATASET: OrbbecDataset
-            DATA_PATH: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/foundation_out
+            DATA_PATH: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/foundation_out
             DATA_SPLIT: {
-                TRAINING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_train.txt,
-                EVALUATING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_val.txt,
-                TESTING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real/splits/openstereo/manifest_test.txt
+                TRAINING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_train.txt,
+                EVALUATING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_val.txt,
+                TESTING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_test.txt
             }
             RETURN_RIGHT_DISP: false
 
     DATA_TRANSFORM:
         TRAINING:
-            - { NAME: BANetFlowAugmentor }
+            - { NAME: BANetFlowAugmentor, CROP_SIZE: [ 320, 608 ] }
             - { NAME: TransposeImage }
             - { NAME: ToTensor }
         EVALUATING:
