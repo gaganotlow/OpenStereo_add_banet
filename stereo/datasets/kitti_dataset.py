@@ -11,6 +11,8 @@ class KittiDataset(DatasetTemplate):
         super().__init__(data_info, data_cfg, mode)
         self.return_right_disp = self.data_info.RETURN_RIGHT_DISP
         self.use_noc = self.data_info.get('USE_NOC', False)
+        # 蒸馏：可选的 teacher prob 分布目录（<stem>.npy, [bins, H/4, W/4] fp16），仅 training 用
+        self.teacher_prob_dir = self.data_info.get('TEACHER_PROB_DIR', None)
         if hasattr(self.data_info, 'RETURN_POS'):
             self.retrun_pos = self.data_info.RETURN_POS
         else:
@@ -40,6 +42,12 @@ class KittiDataset(DatasetTemplate):
 
         if self.retrun_pos and self.mode == 'training':
             sample['pos'] = get_pos_fullres(800, sample['left'].shape[1], sample['left'].shape[0])
+
+        if self.teacher_prob_dir is not None and self.mode == 'training':
+            stem = os.path.splitext(os.path.basename(item[0]))[0]
+            prob_path = os.path.join(self.teacher_prob_dir, stem + '.npy')
+            # [bins, H/4, W/4]，保持 CHW；augmentor 在 1/4 分辨率按 (y0,x0) 同步裁剪
+            sample['teacher_prob'] = np.load(prob_path).astype(np.float32)
 
         sample = self.transform(sample)
         sample['index'] = idx

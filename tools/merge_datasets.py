@@ -30,6 +30,12 @@ def merge_datasets(dataset_paths, output_path, name, symlink=False):
     merged_foundation = output_path / "foundation_out"
     manifest_dir = output_path / "splits" / "openstereo"
 
+    # 也把任意一个子数据集的相机内参保存到合并输出，供点云导出使用
+    # （多个子数据集来自同一相机时，intrinsics 一致，取第一个即可）
+    merged_raw = output_path / "raw"
+    merged_raw.mkdir(parents=True, exist_ok=True)
+    merged_intr = merged_raw / "camera_intrinsics.json"
+
     # 创建目录结构
     for subdir in ["training/image_2", "training/image_3", "training/disp_occ_0"]:
         (merged_foundation / "train" / subdir).mkdir(parents=True, exist_ok=True)
@@ -47,6 +53,19 @@ def merge_datasets(dataset_paths, output_path, name, symlink=False):
         dataset_name = dataset_path.name
 
         print(f"\n处理数据集 {i+1}/{len(dataset_paths)}: {dataset_name}")
+
+        # 尝试收集 intrinsics（只要拿到一次就够）
+        if not merged_intr.is_file():
+            src_intr = dataset_path / "raw" / "camera_intrinsics.json"
+            if src_intr.is_file():
+                if symlink:
+                    try:
+                        merged_intr.symlink_to(src_intr.absolute())
+                    except FileExistsError:
+                        pass
+                else:
+                    shutil.copy2(src_intr, merged_intr)
+                print(f"  intrinsics: {merged_intr}  (from {src_intr})")
 
         # 检查数据集结构
         foundation_out = dataset_path / "foundation_out"
@@ -372,10 +391,12 @@ def generate_readme(dataset_info, output_path, name, total_samples):
 
 ## 数据结构
 
-所有数据已真正合并到统一的 foundation_out 目录：
+所有数据已真正合并到统一的 foundation_out 目录；并在合并输出中保存相机内参，供点云导出使用：
 
 ```
 {output_path}/
+├── raw/
+│   └── camera_intrinsics.json
 ├── foundation_out/
 │   ├── train/training/
 │   │   ├── image_2/    # 左图

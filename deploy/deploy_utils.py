@@ -10,7 +10,35 @@ import urllib
 
 import numpy as np
 import pandas as pd
-import pkg_resources as pkg
+try:
+    import pkg_resources as pkg
+except ModuleNotFoundError:
+    import importlib.metadata as importlib_metadata
+    from packaging.version import parse as parse_version
+
+    class _PkgCompat:
+        VersionConflict = Exception
+        DistributionNotFound = importlib_metadata.PackageNotFoundError
+
+        @staticmethod
+        def parse_version(version):
+            return parse_version(version)
+
+        @staticmethod
+        def parse_requirements(requirements):
+            from packaging.requirements import Requirement
+            return [Requirement(r) for r in requirements]
+
+        @staticmethod
+        def require(requirement):
+            from packaging.requirements import Requirement
+            req = Requirement(requirement)
+            version = importlib_metadata.version(req.name)
+            if req.specifier and version not in req.specifier:
+                raise Exception(f'{req.name}{req.specifier} required, found {version}')
+            return version
+
+    pkg = _PkgCompat()
 
 from pathlib import Path
 from subprocess import check_output

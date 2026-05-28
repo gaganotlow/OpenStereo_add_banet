@@ -1,0 +1,80 @@
+# BANet2D + FoundationStereo 边界 KL 蒸馏 —— fine-tune 修正版
+# 首版（banet2d_orin_distill.yaml）无效：复用了从头训练的 OneCycleLR(峰值 8e-4)，epoch0 把 best
+# 初始化打飞(val 0.478→0.581)，60 epoch 几乎全花在恢复，KL 没机会生效。
+# 本版唯一改动：LR 峰值 8e-4→5e-5(16×↓)，PCT_START=0.01 → 几乎立即从 5e-5 线性衰减到 ~0，
+# epoch 25。保住好初始化，隔离验证“KL 到底有没有用”。λ 保持 0.02 不变。
+
+DATA_CONFIG:
+    DATA_INFOS:
+        -   DATASET: OrbbecDataset
+            DATA_PATH: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/foundation_out
+            DATA_SPLIT: {
+                TRAINING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_train.txt,
+                EVALUATING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_val.txt,
+                TESTING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_test.txt
+            }
+            RETURN_RIGHT_DISP: false
+            TEACHER_PROB_DIR: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/foundation_out/teacher_prob
+
+    DATA_TRANSFORM:
+        TRAINING:
+            - { NAME: BANetFlowAugmentor, CROP_SIZE: [ 320, 608 ] }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+        EVALUATING:
+            - { NAME: RightTopPad, SIZE: [ 480, 640 ] }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+
+MODEL:
+    NAME: BANet2D
+    MAX_DISP: 192
+    FIND_UNUSED_PARAMETERS: false
+    CKPT: -1
+    PRETRAINED_MODEL: output/OrbbecDataset/BANet2D/banet2d_orin/run_5ds_260519/ckpt/checkpoint_epoch_195.pth
+    DISTILL:
+        LAMBDA_KL: 0.02
+
+OPTIMIZATION:
+    FREEZE_BN: false
+    SYNC_BN: true
+    AMP: false
+    BATCH_SIZE_PER_GPU: 4
+    NUM_EPOCHS: 25
+
+    OPTIMIZER:
+        NAME: AdamW
+        LR: &lr 0.00005
+        WEIGHT_DECAY: 1.0e-05
+        EPS: 1.0e-08
+
+    SCHEDULER:
+        NAME: OneCycleLR
+        MAX_LR: *lr
+        PCT_START: 0.01
+        CYCLE_MOMENTUM: False
+        ANNEAL_STRATEGY: linear
+        ON_EPOCH: False
+
+    CLIP_GRAD:
+        TYPE: norm
+        MAX_NORM: 1.0
+        NORM_TYPE: 2
+
+EVALUATOR:
+    BATCH_SIZE_PER_GPU: 1
+    MAX_DISP: 192
+    METRIC:
+        - d1_all
+        - epe
+        - thres_1
+        - thres_2
+        - thres_3
+
+TRAINER:
+    EVAL_INTERVAL: 2
+    CKPT_SAVE_INTERVAL: 2
+    MAX_CKPT_SAVE_NUM: 15
+    LOGGER_ITER_INTERVAL: 10
+    TRAIN_VISUALIZATION: True
+    EVAL_VISUALIZATION: True

@@ -156,8 +156,13 @@ class DPT_DINOv2(nn.Module):
         #     self.pretrained = torch.hub.load('torchhub/facebookresearch_dinov2_main', 'dinov2_{:}14'.format(encoder), source='local', pretrained=False)
         # else:
         # self.pretrained = torch.hub.load('facebookresearch/dinov2', 'dinov2_{:}14'.format(encoder), pretrained=pretrained_dino, skip_validation=True)
-        self.pretrained = torch.hub.load('/file_system/vepfs/algorithm/chenming.zhang/.cache/torch/hub/facebookresearch_dinov2_main', 'dinov2_{:}14'.format(encoder),
-                                         source='local', pretrained=False)
+        # 原作者用 torch.hub.load 加载外部 dinov2 仓库，但本机的 hub 副本是被污染的新版
+        # hubconf（import 了 cell_dino/xray_dino 等不存在的模块）。直接用 vendored dinov2 的
+        # builder 构建，架构与 teacher 权重版本一致，且无需联网/外部 repo。pretrained=False
+        # 是因为 dino 权重随 FoundationStereo teacher ckpt 一起加载。
+        from dinov2.hub.backbones import dinov2_vits14, dinov2_vitb14, dinov2_vitl14
+        _dino_builders = {'vits': dinov2_vits14, 'vitb': dinov2_vitb14, 'vitl': dinov2_vitl14}
+        self.pretrained = _dino_builders[encoder](pretrained=False)
 
         dim = self.pretrained.blocks[0].attn.qkv.in_features
 
@@ -178,8 +183,12 @@ class DepthAnything(DPT_DINOv2):
         super().__init__(**config)
         
         encoder = config['encoder']
-        # load depthanythingv2 pretrained weights, which can be downloaded from https://github.com/DepthAnything/Depth-Anything-V2
-        self.load_state_dict(torch.load(f'/your_path/depth_anything_v2_{encoder}.pth', map_location='cpu'))
+        # DepthAnythingV2 预训练权重仅用于从零训练时的初始化；本流程加载的是完整
+        # FoundationStereo teacher ckpt（含 depth_anything 部分，strict=False），
+        # 故占位路径文件不存在时直接跳过，随机初始化会被 teacher 权重覆盖。
+        _da_ckpt = f'/your_path/depth_anything_v2_{encoder}.pth'
+        if os.path.isfile(_da_ckpt):
+            self.load_state_dict(torch.load(_da_ckpt, map_location='cpu'))
 
     def forward(self, x):
         h, w = x.shape[-2:]

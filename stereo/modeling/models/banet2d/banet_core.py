@@ -25,18 +25,18 @@ class CostVolume(nn.Module):
     def forward(self, left, right, maxdisp):
         left = self.desc(self.conv(left))
         right = self.desc(self.conv(right))
-        cv = []
-        for i in range(maxdisp):
-            if i > 0:
-                cost = self.reduce_mean(left[:,:,:,i:] * right[:,:,:,:-i])
-                cost = F.pad(cost, (i, 0, 0, 0))
-                cv.append(cost)
 
-            else:
-                cost = self.reduce_mean(left * right)
-                cv.append(cost)
+        # 优化：用 pad + stack 替代循环，ONNX/RKNN 友好
+        b, c, h, w = left.shape
+        padded_right = F.pad(right, (maxdisp, 0, 0, 0))
 
-        return torch.cat(cv, dim=1)
+        # 不能在 stack 里调用 nn.Module，必须用纯函数
+        cv = torch.stack([
+            (left * padded_right[:, :, :, maxdisp - i : maxdisp + w - i]).mean(dim=1, keepdim=True)
+            for i in range(maxdisp)
+        ], dim=1).squeeze(2)
+
+        return cv
 
 
 class SpatialAttention(nn.Module):
@@ -153,7 +153,8 @@ class BANet(nn.Module):
         
         if self.training:
             disp_linear = F.interpolate(disp, left.shape[2:], mode='bilinear', align_corners=False)
-            return [disp_up*4., disp_linear*4.]
+            # cv: 1/4 分辨率 cost volume logits [B, max_disp//4, H/4, W/4]，softmax 前，供 KL 蒸馏
+            return [disp_up*4., disp_linear*4., cv]
         else:
             return disp_up*4.
 

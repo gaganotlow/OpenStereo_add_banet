@@ -2,6 +2,7 @@
 # @Author  : zhangchenming
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from stereo.modeling.common.basic_block_3d import BasicConv3d
 from stereo.modeling.common.basic_block_2d import BasicConv2d
 
@@ -29,16 +30,28 @@ class CoExCostVolume(nn.Module):
         return cost
 
 
+# def correlation_volume(left_feature, right_feature, max_disp):
+#     b, c, h, w = left_feature.size()
+#     cost_volume = left_feature.new_zeros(b, max_disp, h, w)
+#     for i in range(max_disp):
+#         if i > 0:
+#             cost_volume[:, i, :, i:] = (left_feature[:, :, :, i:] * right_feature[:, :, :, :-i]).mean(dim=1)
+#         else:
+#             cost_volume[:, i, :, :] = (left_feature * right_feature).mean(dim=1)
+#     cost_volume = cost_volume.contiguous()
+#     return cost_volume
+
 def correlation_volume(left_feature, right_feature, max_disp):
-    b, c, h, w = left_feature.size()
-    cost_volume = left_feature.new_zeros(b, max_disp, h, w)
-    for i in range(max_disp):
-        if i > 0:
-            cost_volume[:, i, :, i:] = (left_feature[:, :, :, i:] * right_feature[:, :, :, :-i]).mean(dim=1)
-        else:
-            cost_volume[:, i, :, :] = (left_feature * right_feature).mean(dim=1)
-    cost_volume = cost_volume.contiguous()
-    return cost_volume
+    b, c, h, w = left_feature.shape
+
+    padded_right = F.pad(right_feature, (max_disp, 0, 0, 0)) 
+
+    cost_volume = torch.stack([
+        (left_feature * padded_right[:, :, :, max_disp - i : max_disp + w - i]).mean(dim=1)  # 计算相似度
+        for i in range(max_disp)
+    ], dim=1)  
+
+    return cost_volume.contiguous()
 
 
 def compute_volume(reference_embedding, target_embedding, maxdisp, side='left'):

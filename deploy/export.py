@@ -54,6 +54,7 @@ from stereo.modeling.models.cfnet.cfnet import CFNet
 from stereo.modeling.models.casnet.cas_gwc import GwcNet as CasGwcNet
 from stereo.modeling.models.casnet.cas_psm import PSMNet as CasPSMNet
 from stereo.modeling.models.lightstereo.lightstereo import LightStereo as LightStereo
+from stereo.modeling.models.banet2d.banet2d import BANet2D
 
 
 __net__ = {
@@ -69,8 +70,18 @@ __net__ = {
     'CFNet': CFNet,
     'CasGwcNet': CasGwcNet,
     'CasPSMNet': CasPSMNet,
-    'LightStereo': LightStereo
+    'LightStereo': LightStereo,
+    'BANet2D': BANet2D
 }
+
+class ONNXWrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, left_img, right_img):
+        return self.model({'left': left_img, 'right': right_img})['disp_pred']
+
 
 # logger
 logger = logging.getLogger('export')
@@ -104,7 +115,7 @@ def try_export(inner_func):
             logger.info(f'{prefix} export success 🍻 {dt.t:.1f}s, saved as {f} ({file_size(f):.1f} MB)')
             return f, model
         except Exception as e:
-            logger.info(f'{prefix} export failure 😭 {dt.t:.1f}s: {e}')
+            logger.exception(f'{prefix} export failure {dt.t:.1f}s: {e}')
             return None, None
 
     return outer_func
@@ -126,27 +137,26 @@ def export_torchscript(model, inputs, file, optimize, prefix=colorstr('TorchScri
     return f, None
 
 @try_export
-def export_onnx(model, inputs, weights, opset, dynamic, simplify, prefix=colorstr('ONNX:')):
-    # ONNX export
+def export_onnx(model, inputs, weights, output, opset, dynamic, simplify, prefix=colorstr('ONNX:')):
     check_requirements('onnx', logger)
     import onnx
 
     logger.info(f'{prefix} starting export with onnx {onnx.__version__}...')
-    f = Path(weights).with_suffix('.onnx')
+    f = Path(output) if output else Path(weights).with_suffix('.onnx')
+    f.parent.mkdir(parents=True, exist_ok=True)
 
     input_names = ['left_img', 'right_img']
-    output_names =  ['disp_pred']
+    output_names = ['disp_pred']
 
     if dynamic:
         dynamic = {'left_img': {0: 'batch', 2: 'height', 3: 'width'},
-                   'right_img': {0: 'batch', 2: 'height', 3: 'width'}}
+                   'right_img': {0: 'batch', 2: 'height', 3: 'width'},
+                   'disp_pred': {0: 'batch', 2: 'height', 3: 'width'}}
 
-        dynamic['disp_pred'] = {1: 'height', 2: 'width'}
-
-    
+    wrapper = ONNXWrapper(model).eval()
     torch.onnx.export(
-        model,
-        {'data': inputs},
+        wrapper,
+        (inputs['left'], inputs['right']),
         f,
         verbose=False,
         opset_version=opset,
@@ -155,21 +165,17 @@ def export_onnx(model, inputs, weights, opset, dynamic, simplify, prefix=colorst
         output_names=output_names,
         dynamic_axes=dynamic or None)
 
-    # Checks
-    model_onnx = onnx.load(f)  # load onnx model
-    onnx.checker.check_model(model_onnx)  # check onnx model
+    model_onnx = onnx.load(f)
+    onnx.checker.check_model(model_onnx)
     onnx.save(model_onnx, f)
 
-    # Simplify
     if simplify:
         try:
             cuda = torch.cuda.is_available()
             check_requirements(('onnxruntime-gpu' if cuda else 'onnxruntime', 'onnx-simplifier>=0.4.1', 'onnxoptimizer'), logger)
-        
             import onnxsim
 
             logger.info(f'{prefix} simplifying with onnx-simplifier {onnxsim.__version__}...')
-            # model_opt, check = onnxsim.simplify(model_onnx, include_subgraph=True, skip_shape_inference=True)
             model_opt, check = onnxsim.simplify(model_onnx)
             logger.info("Here is the difference after simplification:")
             logger.info(onnxsim.model_info.print_simplifying_info(model_onnx, model_opt))
@@ -290,12 +296,13 @@ def run(
         batch_size=1,                       # batch size
         device='cpu',                       # cuda device, i.e. 0 or 0,1,2,3 or cpu
         include=('torchscript', 'onnx'),    # include formats
+        output=None,                         # output path
         half=False,                         # FP16 half-precision export
         optimize=False,                     # TorchScript: optimize for mobile
         int8=False,                         # CoreML INT8 quantization
         dynamic=False,                      # ONNX/TensorRT: dynamic axes
         simplify=True,                      # ONNX: simplify model
-        opset=12,                           # ONNX: opset version
+        opset=11,                           # ONNX: opset version
         verbose=False,                      # TensorRT: verbose log
         workspace=4,                        # TensorRT: workspace size (GB)
 ):
@@ -305,7 +312,7 @@ def run(
     flags = [x in include for x in fmts]
     assert sum(flags) == len(include), f'ERROR: Invalid --include {include}, valid --include arguments are {fmts}'
     jit, onnx, xml, engine, coreml, paddle = flags  # export booleans
-    file = Path(url2file(weights) if str(weights).startswith(('http:/', 'https:/')) else weights)  # PyTorch weights
+    file = Path(output) if output else Path(url2file(weights) if str(weights).startswith(('http:/', 'https:/')) else weights)  # PyTorch weights
 
     # Load PyTorch model
     if device != 'cpu':
@@ -322,7 +329,7 @@ def run(
         assert not dynamic, '--half not compatible with --dynamic, i.e. use either --half or --dynamic but not both'
 
     # Network
-    yaml_config = config_loader(opt.config)
+    yaml_config = config_loader(config)
     cfgs = EasyDict(yaml_config)
     model_name = cfgs.MODEL.NAME
 
@@ -354,13 +361,10 @@ def run(
     logger.info(f"starting from {file} ({file_size(file):.1f} MB)")
 
     # dry runs & check
-    try:
-        output = output_model(inputs)
-        if not isinstance(output, (list, tuple, torch.Tensor)):
-            raise TypeError(f"Expected a sequence type, but received {type(output)}")
-        logger.info("Model output is a valid sequence type.")
-    except TypeError as e:
-        logger.warning(f"Error: {e}")
+    model_output = output_model(inputs)
+    if not isinstance(model_output, dict) or 'disp_pred' not in model_output:
+        raise TypeError(f"Expected model output dict with 'disp_pred', but received {type(model_output)}")
+    logger.info("Model output has disp_pred.")
 
     # Exports
     f = [''] * len(fmts)  # exported filenames
@@ -370,7 +374,7 @@ def run(
     if jit:  # TorchScript
         f[get_format_idx(fmts_df, 'torchscript')], _ = export_torchscript(output_model, inputs, weights, optimize)
     if onnx or xml:  # OpenVINO requires ONNX
-        f[get_format_idx(fmts_df, 'onnx')], _ = export_onnx(output_model, inputs, weights, opset, dynamic, simplify)
+        f[get_format_idx(fmts_df, 'onnx')], _ = export_onnx(output_model, inputs, weights, output, opset, dynamic, simplify)
     if xml:  # OpenVINO
         f[get_format_idx(fmts_df, 'openvino')], _ = export_openvino(weights, half)
     if engine:  # TensorRT requires ONNX
@@ -395,6 +399,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=ROOT / '../../cfgs/psmnet/psmnet_kitti15.yaml', help='<config>.yaml path')
     parser.add_argument('--weights', nargs='+', type=str, default=ROOT / '../../output/KITTI2015/PSMNet/PSMNet_SceneFlow/checkpoints/PSMNet_SceneFlow_epoch_latest.pt', help='model.pt path(s)')
+    parser.add_argument('--output', type=str, default=None, help='output path for single exported file')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[256, 512], help='image size (h, w)')
     parser.add_argument('--batch-size', type=int, default=1, help='batch size')
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -403,7 +408,7 @@ def parse_opt():
     parser.add_argument('--int8', action='store_true', help='CoreML INT8 quantization')
     parser.add_argument('--dynamic', action='store_true', help='ONNX/TensorRT: dynamic axes')
     parser.add_argument('--simplify', action='store_true', help='ONNX: simplify model')
-    parser.add_argument('--opset', type=int, default=12, help='ONNX: opset version')
+    parser.add_argument('--opset', type=int, default=11, help='ONNX: opset version')
     parser.add_argument('--verbose', action='store_true', help='TensorRT: verbose log'),
     parser.add_argument('--workspace', type=int, default=4, help='TensorRT: workspace size (GB)')
     parser.add_argument(

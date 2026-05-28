@@ -488,7 +488,16 @@ class BANetFlowAugmentor(object):
             img1 = img1[y0:y0 + cy, x0:x0 + cx]
             img2 = img2[y0:y0 + cy, x0:x0 + cx]
             disp = disp[y0:y0 + cy, x0:x0 + cx]
-        return img1, img2, disp
+        return img1, img2, disp, y0, x0
+
+    def _crop_teacher_prob(self, tp, y0, x0):
+        """tp: [bins, H/4, W/4]，在 1/4 分辨率按左图裁剪 (y0,x0) 同步裁出 [bins, cy/4, cx/4]。"""
+        cy, cx = self.crop_size
+        cyq, cxq = cy // 4, cx // 4
+        _, hq, wq = tp.shape
+        y0q = min(max(round(y0 / 4), 0), max(0, hq - cyq))
+        x0q = min(max(round(x0 / 4), 0), max(0, wq - cxq))
+        return tp[:, y0q:y0q + cyq, x0q:x0q + cxq]
 
     def __call__(self, sample):
         # KittiDataset 读进来的 left/right 是 float32 (HxWx3)；ColorJitter 走 PIL 需要 uint8
@@ -498,10 +507,13 @@ class BANetFlowAugmentor(object):
 
         img1, img2 = self.color_transform(img1, img2)
         img1, img2 = self.eraser_transform(img1, img2)
-        img1, img2, disp = self.spatial_transform(img1, img2, disp)
+        img1, img2, disp, y0, x0 = self.spatial_transform(img1, img2, disp)
 
         # 与官方一致：保留 0-255 范围（不归一化），但还原为 float32 供后续 ToTensor 使用
         sample['left'] = np.ascontiguousarray(img1).astype(np.float32)
         sample['right'] = np.ascontiguousarray(img2).astype(np.float32)
         sample['disp'] = np.ascontiguousarray(disp).astype(np.float32)
+        if 'teacher_prob' in sample:
+            tp = self._crop_teacher_prob(sample['teacher_prob'], y0, x0)
+            sample['teacher_prob'] = np.ascontiguousarray(tp).astype(np.float32)
         return sample

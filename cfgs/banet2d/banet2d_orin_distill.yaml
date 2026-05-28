@@ -1,0 +1,83 @@
+# BANet2D + FoundationStereo 边界 KL 蒸馏（方案 1）
+# 基于 banet2d_orin.yaml，从 best ckpt(epoch 195, EPE 0.478) 精修残余边界 gap。
+# 诊断结论 B_edge_dominant：edge 桶 EPE ×4.33，用 teacher 软分布 KL 直接补边界。
+
+DATA_CONFIG:
+    DATA_INFOS:
+        -   DATASET: OrbbecDataset
+            DATA_PATH: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/foundation_out
+            DATA_SPLIT: {
+                TRAINING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_train.txt,
+                EVALUATING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_val.txt,
+                TESTING: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/splits/openstereo/manifest_test.txt
+            }
+            RETURN_RIGHT_DISP: false
+            # teacher prob 分布目录（extract_foundation_entropy.py --save_prob_dir 产物，[48,H/4,W/4] fp16）
+            TEACHER_PROB_DIR: /data2/shendu/code/ruoyu/openstereo_add_banet/dataset/orbbec_merged_real_5ds/foundation_out/teacher_prob
+
+    DATA_TRANSFORM:
+        TRAINING:
+            - { NAME: BANetFlowAugmentor, CROP_SIZE: [ 320, 608 ] }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+        EVALUATING:
+            - { NAME: RightTopPad, SIZE: [ 480, 640 ] }
+            - { NAME: TransposeImage }
+            - { NAME: ToTensor }
+
+MODEL:
+    NAME: BANet2D
+    MAX_DISP: 192
+    FIND_UNUSED_PARAMETERS: false
+    CKPT: -1
+    PRETRAINED_MODEL: output/OrbbecDataset/BANet2D/banet2d_orin/run_5ds_260519/ckpt/checkpoint_epoch_195.pth
+    DISTILL:
+        # 实测（从 best ckpt 精修）：loss_disp≈0.2（已很准），loss_kl≈8 nats（student argmax
+        # 训出的尖锐分布 vs teacher 软分布，差异天然大）。要让 KL 项≈disp 而不压过视差监督：
+        # λ≈0.02 → KL 项≈0.16。可在 [0.01,0.05] 间扫。（注：smoke 10 帧单 iter 的 disp=1.4 不具
+        # 代表性，全量精修 disp 小 ~7×，故 λ 从 0.1 下调到 0.02。）
+        LAMBDA_KL: 0.02
+
+OPTIMIZATION:
+    FREEZE_BN: false
+    SYNC_BN: true
+    AMP: false
+    BATCH_SIZE_PER_GPU: 4
+    NUM_EPOCHS: 60
+
+    OPTIMIZER:
+        NAME: AdamW
+        LR: &lr 0.0008
+        WEIGHT_DECAY: 1.0e-05
+        EPS: 1.0e-08
+
+    SCHEDULER:
+        NAME: OneCycleLR
+        MAX_LR: *lr
+        PCT_START: 0.01
+        CYCLE_MOMENTUM: False
+        ANNEAL_STRATEGY: linear
+        ON_EPOCH: False
+
+    CLIP_GRAD:
+        TYPE: norm
+        MAX_NORM: 1.0
+        NORM_TYPE: 2
+
+EVALUATOR:
+    BATCH_SIZE_PER_GPU: 1
+    MAX_DISP: 192
+    METRIC:
+        - d1_all
+        - epe
+        - thres_1
+        - thres_2
+        - thres_3
+
+TRAINER:
+    EVAL_INTERVAL: 5
+    CKPT_SAVE_INTERVAL: 5
+    MAX_CKPT_SAVE_NUM: 15
+    LOGGER_ITER_INTERVAL: 10
+    TRAIN_VISUALIZATION: True
+    EVAL_VISUALIZATION: True
