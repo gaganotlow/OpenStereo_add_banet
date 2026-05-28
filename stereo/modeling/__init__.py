@@ -20,7 +20,7 @@ from .models.igevpp.trainer import Trainer as IGEVPPTrainer
 from .models.igev_rt.trainer import Trainer as IGEVRTTrainer
 
 try:
-# FoundationStereo：环境与训练入口见仓库根目录 TRAIN.md；上游文档见 OpenStereo 官方仓库。
+# FoundationStereo：环境与训练入口见仓库根目录 README.md；上游文档见 OpenStereo 官方仓库。
     from .models.foundationstereo.trainer import Trainer as FoundationStereoTrainer
 except Exception:
     FoundationStereoTrainer = None

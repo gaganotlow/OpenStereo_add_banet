@@ -37,19 +37,13 @@ output/OrbbecDataset/LightStereo/lightstereo_s_orin_256x512/run_5ds_256x512_2605
 
 新采集的数据集通常是顶层 `*.png` 加 `camera_intrinsics.json`，还没有 `foundation_out/`。需要先用 FoundationStereo 生成伪视差 GT，并切分 train/val/test。
 
-每个数据集目录里应有：
-
-```text
-scripts/process_orbbec_all_in_one.py
-```
-
-如果没有，可以从已有 Orbbec 数据集目录复制。
+使用仓库中的 `tools/process_orbbec_all_in_one.py`：
 
 ```bash
 source /data2/shendu/anaconda3/etc/profile.d/conda.sh
 conda activate foundation_stereo
 
-CUDA_VISIBLE_DEVICES=1 python /path/to/dataset/process_orbbec_all_in_one.py \
+CUDA_VISIBLE_DEVICES=1 python tools/process_orbbec_all_in_one.py \
   --session_root /path/to/dataset \
   --raw_dir /path/to/dataset \
   --skip_steps 4
